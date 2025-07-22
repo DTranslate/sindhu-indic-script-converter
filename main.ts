@@ -1,107 +1,161 @@
-import { Plugin, PluginSettingTab, App, Setting, Editor, MarkdownView, Menu } from 'obsidian';
-// @ts-ignore
+import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, MarkdownView, Modal } from "obsidian";
 import Sanscript from "@indic-transliteration/sanscript";
 
-interface ITransPluginSettings {
-	defaultDirection: 'itrans-to-devanagari' | 'devanagari-to-itrans';
+interface TransliterationSettings {
+	defaultDirection: "ITRANS_TO_DEV" | "DEV_TO_ITRANS";
+	appendMode: boolean;
 }
 
-const DEFAULT_SETTINGS: ITransPluginSettings = {
-	defaultDirection: 'itrans-to-devanagari',
+const DEFAULT_SETTINGS: TransliterationSettings = {
+	defaultDirection: "ITRANS_TO_DEV",
+	appendMode: true,
 };
 
-export default class ITransConverterPlugin extends Plugin {
-	settings: ITransPluginSettings;
+export default class TransliterationPlugin extends Plugin {
+	settings: TransliterationSettings;
+	statusBarEl: HTMLElement;
 
 	async onload() {
 		await this.loadSettings();
 
-		// Command: Convert selected (ITRANS → DEV)
+		this.addSettingTab(new TransliterationSettingTab(this.app, this));
+
+		this.statusBarEl = this.addStatusBarItem();
+		this.updateStatusBar();
+
 		this.addCommand({
-			id: 'convert-itrans-to-devanagari',
-			name: 'ITRANS → Devanagari',
-			editorCallback: (editor) => this.convert(editor, 'itrans', 'devanagari')
+			id: "convert-selection-or-note",
+			name: "Convert Selection or Entire Note",
+			callback: () => this.convertCurrentNoteOrSelection(),
 		});
 
-		// Command: Convert selected (DEV → ITRANS)
 		this.addCommand({
-			id: 'convert-devanagari-to-itrans',
-			name: 'Devanagari → ITRANS',
-			editorCallback: (editor) => this.convert(editor, 'devanagari', 'itrans')
+			id: "convert-preview",
+			name: "Preview Transliteration of Selection",
+			callback: () => this.previewTransliteration(),
 		});
 
-		// Command: Convert entire note using default direction
 		this.addCommand({
-			id: 'convert-entire-note-default-direction',
-			name: 'Convert Entire Note (Default Direction)',
+			id: "toggle-direction",
+			name: "Toggle Transliteration Direction",
+			callback: () => {
+				this.settings.defaultDirection =
+					this.settings.defaultDirection === "ITRANS_TO_DEV" ? "DEV_TO_ITRANS" : "ITRANS_TO_DEV";
+				this.saveSettings();
+				this.updateStatusBar();
+			},
+		});
+
+		this.addCommand({
+			id: "convert-selection-itrans-to-dev",
+			name: "Convert Selection from ITRANS to Devanagari",
 			callback: () => {
 				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view) return;
+				this.convertSelection(view.editor, "ITRANS_TO_DEV");
+			},
 
-				const editor = view.editor;
-				const fullText = editor.getValue();
+		});
+		
+		this.addCommand({
+			id: "convert-selection-dev-to-itrans",
+			name: "Convert Selection from Devanagari to ITRANS",
+			callback: () => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return;
+				this.convertSelection(view.editor, "DEV_TO_ITRANS");
+			},
 
-				const [from, to] = this.settings.defaultDirection === 'itrans-to-devanagari'
-					? ['itrans', 'devanagari']
-					: ['devanagari', 'itrans'];
-
-				const converted = Sanscript.t(fullText, from, to);
-				const result = `${fullText} (*${converted}*)`;
-
-				editor.setValue(result);
-			}
 		});
 
-		// Right-click editor context menu
-		this.registerEvent(this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
-			menu.addItem(item => {
-				item.setTitle('ITRANS → Devanagari')
-					.setIcon('arrow-right')
-					.onClick(() => this.convert(editor, 'itrans', 'devanagari'));
-			});
-			menu.addItem(item => {
-				item.setTitle('Devanagari → ITRANS')
-					.setIcon('arrow-left')
-					.onClick(() => this.convert(editor, 'devanagari', 'itrans'));
-			});
-		}));
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor) => {
+				menu.addItem((item) => {
+					item
+						.setTitle("🆎→🕉")
+						.onClick(() => this.convertSelection(editor, "ITRANS_TO_DEV"));
+				});
+				menu.addItem((item) => {
+					item
+						.setTitle("🕉→🆎")
+						.onClick(() => this.convertSelection(editor, "DEV_TO_ITRANS"));
+				});
+			})
+		);
 
-		// Status bar icon with shift-click direction toggle
-		const statusBarItem = this.addStatusBarItem();
-		const updateStatus = () => {
-			const isItransToDev = this.settings.defaultDirection === 'itrans-to-devanagari';
-			const icon = isItransToDev ? '🆎' : '🕉️';
-			const tooltip = isItransToDev ? 'ITRANS → Devanagari' : 'Devanagari → ITRANS';
-
-			statusBarItem.setText(icon);
-			statusBarItem.setAttr('aria-label', tooltip);
-			statusBarItem.setAttr('title', tooltip);
+		this.statusBarEl.onclick = () => {
+			this.settings.defaultDirection =
+				this.settings.defaultDirection === "ITRANS_TO_DEV" ? "DEV_TO_ITRANS" : "ITRANS_TO_DEV";
+			this.saveSettings();
+			this.updateStatusBar();
 		};
-
-		statusBarItem.addClass('itrans-status-bar');
-		statusBarItem.onClickEvent((evt: MouseEvent) => {
-			if (evt.shiftKey) {
-				this.settings.defaultDirection =
-					this.settings.defaultDirection === 'itrans-to-devanagari'
-						? 'devanagari-to-itrans'
-						: 'itrans-to-devanagari';
-				this.saveSettings();
-				updateStatus();
-			}
-		});
-		updateStatus();
-
-		this.addSettingTab(new ITransSettingTab(this.app, this));
 	}
 
-	async convert(editor: Editor, from: string, to: string) {
-		const selected = editor.getSelection();
-		if (!selected) return;
-
-		const converted = Sanscript.t(selected, from, to);
-		const result = `${selected} (*${converted}*)`;
-		editor.replaceSelection(result);
+	updateStatusBar() {
+		const icon =
+			this.settings.defaultDirection === "ITRANS_TO_DEV" ? "🆎→🕉" : "🕉→🆎";
+		this.statusBarEl.setText(icon);
 	}
+
+	async previewTransliteration() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) return;
+
+		const editor = view.editor;
+		const selectedText = editor.getSelection();
+		if (!selectedText) {
+			new Notice("No text selected for preview.");
+			return;
+		}
+
+		const converted = this.convertText(selectedText, this.settings.defaultDirection);
+		const previewText = `${selectedText} (${converted})`;
+
+		new PreviewModal(this.app, previewText, () => {
+			editor.replaceSelection(this.settings.appendMode
+				? `${selectedText} (${converted})`
+				: converted);
+		}).open();
+	}
+
+	convertText(text: string, direction: "ITRANS_TO_DEV" | "DEV_TO_ITRANS"): string {
+		if (direction === "ITRANS_TO_DEV") {
+			return Sanscript.t(text, "itrans", "devanagari");
+		} else {
+			return Sanscript.t(text, "devanagari", "itrans");
+		}
+	}
+
+	convertSelection(editor: any, direction: "ITRANS_TO_DEV" | "DEV_TO_ITRANS") {
+		const selectedText = editor.getSelection();
+		if (!selectedText) return;
+
+		const converted = this.convertText(selectedText, direction);
+		editor.replaceSelection(this.settings.appendMode
+			? `${selectedText} (${converted})`
+			: converted);
+	}
+
+	convertCurrentNoteOrSelection() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) return;
+
+		const editor = view.editor;
+		const selectedText = editor.getSelection();
+		const direction = this.settings.defaultDirection;
+
+		if (selectedText) {
+			this.convertSelection(editor, direction);
+		} else {
+			const fullText = editor.getValue();
+			const converted = this.convertText(fullText, direction);
+			editor.setValue(this.settings.appendMode
+				? `${fullText}\n\n---\n\n${converted}`
+				: converted);
+		}
+	}
+
+	onunload() {}
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -112,31 +166,63 @@ export default class ITransConverterPlugin extends Plugin {
 	}
 }
 
-class ITransSettingTab extends PluginSettingTab {
-	plugin: ITransConverterPlugin;
+class PreviewModal extends Modal {
+	constructor(app: App, private previewText: string, private onConfirm: () => void) {
+		super(app);
+	}
 
-	constructor(app: App, plugin: ITransConverterPlugin) {
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		const display = contentEl.createEl("div", { text: this.previewText });
+		display.style.fontSize = "1.2em";
+		display.style.marginBottom = "1em";
+
+		const btn = contentEl.createEl("button", { text: "✅ Convert" });
+		btn.onclick = () => {
+			this.onConfirm();
+			this.close();
+		};
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class TransliterationSettingTab extends PluginSettingTab {
+	constructor(app: App, private plugin: TransliterationPlugin) {
 		super(app, plugin);
-		this.plugin = plugin;
 	}
 
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'ITRANS Converter Settings' });
+		new Setting(containerEl)
+			.setName("Default Transliteration Direction")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("ITRANS_TO_DEV", "🆎 → 🕉 ITRANS → Devanagari")
+					.addOption("DEV_TO_ITRANS", "🕉 → 🆎 Devanagari → ITRANS")
+					.setValue(this.plugin.settings.defaultDirection)
+					.onChange(async (value: any) => {
+						this.plugin.settings.defaultDirection = value;
+						await this.plugin.saveSettings();
+						this.plugin.updateStatusBar();
+					})
+			);
 
 		new Setting(containerEl)
-			.setName('Default conversion direction')
-			.setDesc('Used for full note conversion and status bar icon')
-			.addDropdown(drop => drop
-				.addOption('itrans-to-devanagari', 'ITRANS → Devanagari')
-				.addOption('devanagari-to-itrans', 'Devanagari → ITRANS')
-				.setValue(this.plugin.settings.defaultDirection)
-				.onChange(async (value) => {
-					this.plugin.settings.defaultDirection = value as any;
-					await this.plugin.saveSettings();
-				})
+			.setName("Append instead of Replace")
+			.setDesc("If ON, conversion will be appended in parentheses instead of replacing.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.appendMode)
+					.onChange(async (value) => {
+						this.plugin.settings.appendMode = value;
+						await this.plugin.saveSettings();
+					})
 			);
 	}
 }
