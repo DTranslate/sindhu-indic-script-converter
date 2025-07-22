@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "itrans2devanagari",
+	"name": "itrans2devanagari",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"minAppVersion": "0.0.1",
+	"description": "This plugin converts iTrans text into Devanagari",
+	"author": "Anant U",
+	"authorUrl": "",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }
