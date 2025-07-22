@@ -4,12 +4,10 @@ import Sanscript from "@indic-transliteration/sanscript";
 
 interface ITransPluginSettings {
 	defaultDirection: 'itrans-to-devanagari' | 'devanagari-to-itrans';
-	appendInstead: boolean;
 }
 
 const DEFAULT_SETTINGS: ITransPluginSettings = {
 	defaultDirection: 'itrans-to-devanagari',
-	appendInstead: false
 };
 
 export default class ITransConverterPlugin extends Plugin {
@@ -18,35 +16,81 @@ export default class ITransConverterPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Command: Convert ITRANS → Devanagari
+		// Command: Convert selected (ITRANS → DEV)
 		this.addCommand({
 			id: 'convert-itrans-to-devanagari',
-			name: 'Convert ITRANS to Devanagari',
+			name: 'ITRANS → Devanagari',
 			editorCallback: (editor) => this.convert(editor, 'itrans', 'devanagari')
 		});
 
-		// Command: Convert Devanagari → ITRANS
+		// Command: Convert selected (DEV → ITRANS)
 		this.addCommand({
 			id: 'convert-devanagari-to-itrans',
-			name: 'Convert Devanagari to ITRANS',
+			name: 'Devanagari → ITRANS',
 			editorCallback: (editor) => this.convert(editor, 'devanagari', 'itrans')
 		});
 
-		// Add context menu entries
+		// Command: Convert entire note using default direction
+		this.addCommand({
+			id: 'convert-entire-note-default-direction',
+			name: 'Convert Entire Note (Default Direction)',
+			callback: () => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return;
+
+				const editor = view.editor;
+				const fullText = editor.getValue();
+
+				const [from, to] = this.settings.defaultDirection === 'itrans-to-devanagari'
+					? ['itrans', 'devanagari']
+					: ['devanagari', 'itrans'];
+
+				const converted = Sanscript.t(fullText, from, to);
+				const result = `${fullText} (*${converted}*)`;
+
+				editor.setValue(result);
+			}
+		});
+
+		// Right-click editor context menu
 		this.registerEvent(this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
 			menu.addItem(item => {
-				item.setTitle('Convert ITRANS → Devanagari')
+				item.setTitle('ITRANS → Devanagari')
 					.setIcon('arrow-right')
 					.onClick(() => this.convert(editor, 'itrans', 'devanagari'));
 			});
 			menu.addItem(item => {
-				item.setTitle('Convert Devanagari → ITRANS')
+				item.setTitle('Devanagari → ITRANS')
 					.setIcon('arrow-left')
 					.onClick(() => this.convert(editor, 'devanagari', 'itrans'));
 			});
 		}));
 
-		// Add settings tab
+		// Status bar icon with shift-click direction toggle
+		const statusBarItem = this.addStatusBarItem();
+		const updateStatus = () => {
+			const isItransToDev = this.settings.defaultDirection === 'itrans-to-devanagari';
+			const icon = isItransToDev ? '🆎' : '🕉️';
+			const tooltip = isItransToDev ? 'ITRANS → Devanagari' : 'Devanagari → ITRANS';
+
+			statusBarItem.setText(icon);
+			statusBarItem.setAttr('aria-label', tooltip);
+			statusBarItem.setAttr('title', tooltip);
+		};
+
+		statusBarItem.addClass('itrans-status-bar');
+		statusBarItem.onClickEvent((evt: MouseEvent) => {
+			if (evt.shiftKey) {
+				this.settings.defaultDirection =
+					this.settings.defaultDirection === 'itrans-to-devanagari'
+						? 'devanagari-to-itrans'
+						: 'itrans-to-devanagari';
+				this.saveSettings();
+				updateStatus();
+			}
+		});
+		updateStatus();
+
 		this.addSettingTab(new ITransSettingTab(this.app, this));
 	}
 
@@ -55,8 +99,7 @@ export default class ITransConverterPlugin extends Plugin {
 		if (!selected) return;
 
 		const converted = Sanscript.t(selected, from, to);
-		const result = this.settings.appendInstead ? `${selected} (*${converted}*)` : converted;
-
+		const result = `${selected} (*${converted}*)`;
 		editor.replaceSelection(result);
 	}
 
@@ -69,7 +112,6 @@ export default class ITransConverterPlugin extends Plugin {
 	}
 }
 
-// Settings UI
 class ITransSettingTab extends PluginSettingTab {
 	plugin: ITransConverterPlugin;
 
@@ -86,24 +128,13 @@ class ITransSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Default conversion direction')
-			.setDesc('Used by other commands or future global conversion')
+			.setDesc('Used for full note conversion and status bar icon')
 			.addDropdown(drop => drop
 				.addOption('itrans-to-devanagari', 'ITRANS → Devanagari')
 				.addOption('devanagari-to-itrans', 'Devanagari → ITRANS')
 				.setValue(this.plugin.settings.defaultDirection)
 				.onChange(async (value) => {
 					this.plugin.settings.defaultDirection = value as any;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName('Append converted text instead of replacing')
-			.setDesc('E.g., राम → राम (*rAma*)')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.appendInstead)
-				.onChange(async (value) => {
-					this.plugin.settings.appendInstead = value;
 					await this.plugin.saveSettings();
 				})
 			);
