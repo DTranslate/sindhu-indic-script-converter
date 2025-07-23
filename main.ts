@@ -52,7 +52,7 @@ export default class TransliterationPlugin extends Plugin {
   }
 
   updateStatusBar() {
-    this.statusBarEl.setText(`🔤 ${this.settings.inputScript} → ${this.settings.outputScript}`);
+    this.statusBarEl.setText(`${this.settings.inputScript} 🔁 ${this.settings.outputScript}`);
   }
 
   convertText(text: string): string {
@@ -211,8 +211,8 @@ class TransliterationSettingTab extends PluginSettingTab {
     containerEl.createEl("hr");
     containerEl.createEl("div", { text: "☕ Like this plugin? Support the developer!" });
     const coffeeLink = containerEl.createEl("a", {
-      text: "Buy Me a Coffee",
-      href: "https://www.buymeacoffee.com/YOUR_USERNAME",
+      text: "Buy Me a ☕ Coffee",
+      href: "https://www.buymeacoffee.com/YOUR_USERNAME", 
     });
 
     coffeeLink.setAttribute("target", "_blank");
