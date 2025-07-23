@@ -72,12 +72,12 @@ export default class TransliterationPlugin extends Plugin {
 			this.app.workspace.on("editor-menu", (menu, editor) => {
 				menu.addItem((item) => {
 					item
-						.setTitle("🆎→🕉")
+						.setTitle("ℹ️→🕉")
 						.onClick(() => this.convertSelection(editor, "ITRANS_TO_DEV"));
 				});
 				menu.addItem((item) => {
 					item
-						.setTitle("🕉→🆎")
+						.setTitle("🕉→ℹ️")
 						.onClick(() => this.convertSelection(editor, "DEV_TO_ITRANS"));
 				});
 			})
@@ -93,7 +93,7 @@ export default class TransliterationPlugin extends Plugin {
 
 	updateStatusBar() {
 		const icon =
-			this.settings.defaultDirection === "ITRANS_TO_DEV" ? "🆎→🕉" : "🕉→🆎";
+			this.settings.defaultDirection === "ITRANS_TO_DEV" ? "ℹ️→🕉" : "🕉→ℹ️";
 		this.statusBarEl.setText(icon);
 	}
 
@@ -203,8 +203,8 @@ class TransliterationSettingTab extends PluginSettingTab {
 			.setName("Default Transliteration Direction")
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOption("ITRANS_TO_DEV", "🆎 → 🕉 ITRANS → Devanagari")
-					.addOption("DEV_TO_ITRANS", "🕉 → 🆎 Devanagari → ITRANS")
+					.addOption("ITRANS_TO_DEV", "ℹ️ → 🕉 ITRANS → Devanagari")
+					.addOption("DEV_TO_ITRANS", "🕉 → ℹ️ Devanagari → ITRANS")
 					.setValue(this.plugin.settings.defaultDirection)
 					.onChange(async (value: any) => {
 						this.plugin.settings.defaultDirection = value;
