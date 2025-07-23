@@ -1,9 +1,9 @@
 {
 	"id": "itrans2devanagari",
-	"name": "itrans2devanagari",
+	"name": "Sindhu",
 	"version": "1.0.0",
-	"minAppVersion": "0.0.1",
-	"description": "This plugin converts iTrans text into Devanagari",
+	"minAppVersion": "1.1.0",
+		"description": "Sindhu, The Indian script morphing tool. It helps you convert on type of typesetting to other seemlessly. Ex rAma -> राम, রাম, ਰਾਮ, રામ, ରାମ, ராம, రామ, ರಾಮ, രാമ visa versa. Also has the capability to from one script to another",
 	"author": "Anant U",
 	"authorUrl": "",
 	"fundingUrl": "",

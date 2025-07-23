@@ -2,227 +2,221 @@ import { App, Plugin, PluginSettingTab, Setting, TFile, Notice, MarkdownView, Mo
 import Sanscript from "@indic-transliteration/sanscript";
 
 interface TransliterationSettings {
-	defaultDirection: "ITRANS_TO_DEV" | "DEV_TO_ITRANS";
-	appendMode: boolean;
+  inputScript: string;
+  outputScript: string;
+  appendMode: boolean;
+  previewBeforeApply: boolean;
 }
 
 const DEFAULT_SETTINGS: TransliterationSettings = {
-	defaultDirection: "ITRANS_TO_DEV",
-	appendMode: true,
+  inputScript: "itrans",
+  outputScript: "devanagari",
+  appendMode: true,
+  previewBeforeApply: false,
 };
 
 export default class TransliterationPlugin extends Plugin {
-	settings: TransliterationSettings;
-	statusBarEl: HTMLElement;
+  settings: TransliterationSettings;
+  statusBarEl: HTMLElement;
 
-	async onload() {
-		await this.loadSettings();
+  async onload() {
+    await this.loadSettings();
+    this.addSettingTab(new TransliterationSettingTab(this.app, this));
 
-		this.addSettingTab(new TransliterationSettingTab(this.app, this));
+    this.statusBarEl = this.addStatusBarItem();
+    this.updateStatusBar();
 
-		this.statusBarEl = this.addStatusBarItem();
-		this.updateStatusBar();
+    this.addCommand({
+      id: "convert-selection-or-note",
+      name: "Convert Selection or Entire Note",
+      callback: () => this.convertCurrentNoteOrSelection(),
+    });
 
-		this.addCommand({
-			id: "convert-selection-or-note",
-			name: "Convert Selection or Entire Note",
-			callback: () => this.convertCurrentNoteOrSelection(),
-		});
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor) => {
+        menu.addItem((item) => {
+          item.setTitle("🔁 Convert using Transliterator").onClick(() => {
+            this.convertSelection(editor);
+          });
+        });
+      })
+    );
 
-		this.addCommand({
-			id: "convert-preview",
-			name: "Preview Transliteration of Selection",
-			callback: () => this.previewTransliteration(),
-		});
+    this.statusBarEl.onclick = () => {
+      const oldInput = this.settings.inputScript;
+      this.settings.inputScript = this.settings.outputScript;
+      this.settings.outputScript = oldInput;
+      this.saveSettings();
+      this.updateStatusBar();
+    };
+  }
 
-		this.addCommand({
-			id: "toggle-direction",
-			name: "Toggle Transliteration Direction",
-			callback: () => {
-				this.settings.defaultDirection =
-					this.settings.defaultDirection === "ITRANS_TO_DEV" ? "DEV_TO_ITRANS" : "ITRANS_TO_DEV";
-				this.saveSettings();
-				this.updateStatusBar();
-			},
-		});
+  updateStatusBar() {
+    this.statusBarEl.setText(`🔤 ${this.settings.inputScript} → ${this.settings.outputScript}`);
+  }
 
-		this.addCommand({
-			id: "convert-selection-itrans-to-dev",
-			name: "Convert Selection from ITRANS to Devanagari",
-			callback: () => {
-				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (!view) return;
-				this.convertSelection(view.editor, "ITRANS_TO_DEV");
-			},
+  convertText(text: string): string {
+    return Sanscript.t(text, this.settings.inputScript, this.settings.outputScript);
+  }
 
-		});
-		
-		this.addCommand({
-			id: "convert-selection-dev-to-itrans",
-			name: "Convert Selection from Devanagari to ITRANS",
-			callback: () => {
-				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (!view) return;
-				this.convertSelection(view.editor, "DEV_TO_ITRANS");
-			},
+  convertSelection(editor: any) {
+    const selectedText = editor.getSelection();
+    if (!selectedText) return;
 
-		});
+    const converted = this.convertText(selectedText);
 
-		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor) => {
-				menu.addItem((item) => {
-					item
-						.setTitle("ℹ️→🕉")
-						.onClick(() => this.convertSelection(editor, "ITRANS_TO_DEV"));
-				});
-				menu.addItem((item) => {
-					item
-						.setTitle("🕉→ℹ️")
-						.onClick(() => this.convertSelection(editor, "DEV_TO_ITRANS"));
-				});
-			})
-		);
+    if (this.settings.previewBeforeApply) {
+      new PreviewModal(this.app, `${selectedText} → ${converted}`, () => {
+        editor.replaceSelection(this.settings.appendMode
+          ? `${selectedText} (${converted})`
+          : converted);
+      }).open();
+    } else {
+      editor.replaceSelection(this.settings.appendMode
+        ? `${selectedText} (${converted})`
+        : converted);
+    }
+  }
 
-		this.statusBarEl.onclick = () => {
-			this.settings.defaultDirection =
-				this.settings.defaultDirection === "ITRANS_TO_DEV" ? "DEV_TO_ITRANS" : "ITRANS_TO_DEV";
-			this.saveSettings();
-			this.updateStatusBar();
-		};
-	}
+  convertCurrentNoteOrSelection() {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return;
 
-	updateStatusBar() {
-		const icon =
-			this.settings.defaultDirection === "ITRANS_TO_DEV" ? "ℹ️→🕉" : "🕉→ℹ️";
-		this.statusBarEl.setText(icon);
-	}
+    const editor = view.editor;
+    const selectedText = editor.getSelection();
 
-	async previewTransliteration() {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) return;
+    if (selectedText) {
+      this.convertSelection(editor);
+    } else {
+      const fullText = editor.getValue();
+      const converted = this.convertText(fullText);
+      editor.setValue(this.settings.appendMode
+        ? `${fullText}\n\n---\n\n${converted}`
+        : converted);
+    }
+  }
 
-		const editor = view.editor;
-		const selectedText = editor.getSelection();
-		if (!selectedText) {
-			new Notice("No text selected for preview.");
-			return;
-		}
+  onunload() {}
 
-		const converted = this.convertText(selectedText, this.settings.defaultDirection);
-		const previewText = `${selectedText} (${converted})`;
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
 
-		new PreviewModal(this.app, previewText, () => {
-			editor.replaceSelection(this.settings.appendMode
-				? `${selectedText} (${converted})`
-				: converted);
-		}).open();
-	}
-
-	convertText(text: string, direction: "ITRANS_TO_DEV" | "DEV_TO_ITRANS"): string {
-		if (direction === "ITRANS_TO_DEV") {
-			return Sanscript.t(text, "itrans", "devanagari");
-		} else {
-			return Sanscript.t(text, "devanagari", "itrans");
-		}
-	}
-
-	convertSelection(editor: any, direction: "ITRANS_TO_DEV" | "DEV_TO_ITRANS") {
-		const selectedText = editor.getSelection();
-		if (!selectedText) return;
-
-		const converted = this.convertText(selectedText, direction);
-		editor.replaceSelection(this.settings.appendMode
-			? `${selectedText} (${converted})`
-			: converted);
-	}
-
-	convertCurrentNoteOrSelection() {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) return;
-
-		const editor = view.editor;
-		const selectedText = editor.getSelection();
-		const direction = this.settings.defaultDirection;
-
-		if (selectedText) {
-			this.convertSelection(editor, direction);
-		} else {
-			const fullText = editor.getValue();
-			const converted = this.convertText(fullText, direction);
-			editor.setValue(this.settings.appendMode
-				? `${fullText}\n\n---\n\n${converted}`
-				: converted);
-		}
-	}
-
-	onunload() {}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
 }
 
 class PreviewModal extends Modal {
-	constructor(app: App, private previewText: string, private onConfirm: () => void) {
-		super(app);
-	}
+  constructor(app: App, private previewText: string, private onConfirm: () => void) {
+    super(app);
+  }
 
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.empty();
-		const display = contentEl.createEl("div", { text: this.previewText });
-		display.style.fontSize = "1.2em";
-		display.style.marginBottom = "1em";
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
 
-		const btn = contentEl.createEl("button", { text: "✅ Convert" });
-		btn.onclick = () => {
-			this.onConfirm();
-			this.close();
-		};
-	}
+    contentEl.createEl("div", { text: this.previewText, cls: "preview-text" });
+    const btn = contentEl.createEl("button", { text: "✅ Convert" });
+    btn.onclick = () => {
+      this.onConfirm();
+      this.close();
+    };
+  }
 
-	onClose() {
-		this.contentEl.empty();
-	}
+  onClose() {
+    this.contentEl.empty();
+  }
 }
 
 class TransliterationSettingTab extends PluginSettingTab {
-	constructor(app: App, private plugin: TransliterationPlugin) {
-		super(app, plugin);
-	}
+  constructor(app: App, private plugin: TransliterationPlugin) {
+    super(app, plugin);
+  }
 
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
+  getSchemeOptions(): Record<string, string> {
+    return {
+      devanagari: "Devanagari (अ)",
+      bengali: "Bengali (অ)",
+      gurmukhi: "Gurmukhi (ਅ)",
+      gujarati: "Gujarati (અ)",
+      oriya: "Oriya (ଅ)",
+      tamil: "Tamil (அ)",
+      telugu: "Telugu (అ)",
+      kannada: "Kannada (ಅ)",
+      malayalam: "Malayalam (അ)",
+      itrans: "ITRANS",
+      iast: "IAST",
+      kolkata: "Kolkata",
+      hk: "Harvard-Kyoto",
+      slp1: "SLP1",
+      wx: "WX",
+    };
+  }
 
-		new Setting(containerEl)
-			.setName("Default Transliteration Direction")
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOption("ITRANS_TO_DEV", "ℹ️ → 🕉 ITRANS → Devanagari")
-					.addOption("DEV_TO_ITRANS", "🕉 → ℹ️ Devanagari → ITRANS")
-					.setValue(this.plugin.settings.defaultDirection)
-					.onChange(async (value: any) => {
-						this.plugin.settings.defaultDirection = value;
-						await this.plugin.saveSettings();
-						this.plugin.updateStatusBar();
-					})
-			);
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
 
-		new Setting(containerEl)
-			.setName("Append instead of Replace")
-			.setDesc("If ON, conversion will be appended in parentheses instead of replacing.")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.appendMode)
-					.onChange(async (value) => {
-						this.plugin.settings.appendMode = value;
-						await this.plugin.saveSettings();
-					})
-			);
-	}
+    new Setting(containerEl)
+      .setName("Input Script")
+      .addDropdown((dropdown) => {
+        const options = this.getSchemeOptions();
+        for (const key in options) {
+          dropdown.addOption(key, options[key]);
+        }
+        dropdown.setValue(this.plugin.settings.inputScript);
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.inputScript = value;
+          await this.plugin.saveSettings();
+          this.plugin.updateStatusBar();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Output Script")
+      .addDropdown((dropdown) => {
+        const options = this.getSchemeOptions();
+        for (const key in options) {
+          dropdown.addOption(key, options[key]);
+        }
+        dropdown.setValue(this.plugin.settings.outputScript);
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.outputScript = value;
+          await this.plugin.saveSettings();
+          this.plugin.updateStatusBar();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Append instead of Replace")
+      .setDesc("If ON, keeps original and adds converted text in parentheses.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.appendMode).onChange(async (value) => {
+          this.plugin.settings.appendMode = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Always show preview before applying")
+      .setDesc("Enable preview popup before applying conversion.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.previewBeforeApply).onChange(async (value) => {
+          this.plugin.settings.previewBeforeApply = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    containerEl.createEl("hr");
+    containerEl.createEl("div", { text: "☕ Like this plugin? Support the developer!" });
+    const coffeeLink = containerEl.createEl("a", {
+      text: "Buy Me a Coffee",
+      href: "https://www.buymeacoffee.com/YOUR_USERNAME",
+    });
+
+    coffeeLink.setAttribute("target", "_blank");
+    coffeeLink.setAttribute("style", "color: var(--text-accent); font-weight: bold;");
+
+  }
 }
