@@ -209,14 +209,24 @@ class TransliterationSettingTab extends PluginSettingTab {
       );
 
     containerEl.createEl("hr");
-    containerEl.createEl("div", { text: "☕ Like this plugin? Support the developer!" });
+    containerEl.createEl("div", { text: "☕ Like this plugin? Support my work!" });
     const coffeeLink = containerEl.createEl("a", {
       text: "Buy Me a ☕ Coffee",
-      href: "https://www.buymeacoffee.com/YOUR_USERNAME", 
+      href: "https://github.com/sponsors/sasiperi?frequency=one-time",       
     });
 
     coffeeLink.setAttribute("target", "_blank");
     coffeeLink.setAttribute("style", "color: var(--text-accent); font-weight: bold;");
+
+    containerEl.createEl("hr");
+    containerEl.createEl("div", { text: "" });
+    const companyLink = containerEl.createEl("a", {
+      text: "Visit my Website",
+      href: "https://fourthquest.com/",       
+    });
+
+    companyLink.setAttribute("target", "_blank");
+    companyLink.setAttribute("style", "color: var(--text-accent); font-weight: bold;");
 
   }
 }
