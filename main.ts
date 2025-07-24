@@ -26,12 +26,45 @@ export default class TransliterationPlugin extends Plugin {
     this.statusBarEl = this.addStatusBarItem();
     this.updateStatusBar();
 
+    // Normal direction command
     this.addCommand({
       id: "convert-selection-or-note",
       name: "Convert Selection or Entire Note",
       callback: () => this.convertCurrentNoteOrSelection(),
     });
 
+    // Reverse direction command
+    this.addCommand({
+      id: "convert-selection-reversed",
+      name: "Convert Selection using Reversed Direction",
+      callback: () => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
+
+        const editor = view.editor;
+        const selectedText = editor.getSelection();
+        if (!selectedText) {
+          new Notice("No text selected.");
+          return;
+        }
+
+        const reversed = Sanscript.t(selectedText, this.settings.outputScript, this.settings.inputScript);
+
+        if (this.settings.previewBeforeApply) {
+          new PreviewModal(this.app, `${selectedText} → ${reversed}`, () => {
+            editor.replaceSelection(this.settings.appendMode
+              ? `${selectedText} (${reversed})`
+              : reversed);
+          }).open();
+        } else {
+          editor.replaceSelection(this.settings.appendMode
+            ? `${selectedText} (${reversed})`
+            : reversed);
+        }
+      },
+    });
+
+    // Context menu
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor) => {
         menu.addItem((item) => {
@@ -42,6 +75,7 @@ export default class TransliterationPlugin extends Plugin {
       })
     );
 
+    // Status bar toggle
     this.statusBarEl.onclick = () => {
       const oldInput = this.settings.inputScript;
       this.settings.inputScript = this.settings.outputScript;
@@ -210,11 +244,11 @@ class TransliterationSettingTab extends PluginSettingTab {
 
     containerEl.createEl("hr");
     containerEl.createEl("div", { text: "☕ Like this plugin? Support my work!" });
+
     const coffeeLink = containerEl.createEl("a", {
       text: "Buy Me a ☕ Coffee",
-      href: "https://github.com/sponsors/sasiperi?frequency=one-time",       
+      href: "https://github.com/sponsors/sasiperi?frequency=one-time",
     });
-
     coffeeLink.setAttribute("target", "_blank");
     coffeeLink.setAttribute("style", "color: var(--text-accent); font-weight: bold;");
 
@@ -222,11 +256,9 @@ class TransliterationSettingTab extends PluginSettingTab {
     containerEl.createEl("div", { text: "" });
     const companyLink = containerEl.createEl("a", {
       text: "Visit my Website",
-      href: "https://fourthquest.com/",       
+      href: "https://fourthquest.com/",
     });
-
     companyLink.setAttribute("target", "_blank");
     companyLink.setAttribute("style", "color: var(--text-accent); font-weight: bold;");
-
   }
 }
